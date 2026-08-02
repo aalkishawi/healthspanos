@@ -4,6 +4,7 @@ import type { SessionUser } from "@/lib/rbac";
 import { Badge } from "@/components/ui/Badge";
 import { SignOutButton } from "@/components/SignOutButton";
 import { PortalNav } from "@/components/PortalNav";
+import { prisma } from "@/lib/db";
 
 export interface NavItem {
   href: string;
@@ -13,7 +14,7 @@ export interface NavItem {
 // Shared authenticated-portal shell: brand + portal name, side nav, sign out.
 // Every role's portal (section 6) renders through this one component so the
 // navigation contract is consistent and de-duplicated.
-export function PortalShell({
+export async function PortalShell({
   user,
   portalName,
   accentLabel,
@@ -27,6 +28,16 @@ export function PortalShell({
   children: React.ReactNode;
 }) {
   const t = getDictionary(user.locale as "en" | "ar");
+
+  // The demo banner used to render unconditionally, so a real member looking at
+  // their own real health data was told it was "synthetic data only". That is
+  // worse than cosmetic — it tells someone their genuine record is fake. Show it
+  // only for tenants actually flagged isDemo.
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: user.tenantId },
+    select: { isDemo: true },
+  });
+  const isDemo = tenant?.isDemo ?? false;
 
   return (
     <div className="min-h-screen bg-surface text-fg lg:grid lg:grid-cols-[260px_1fr]">
@@ -59,9 +70,11 @@ export function PortalShell({
         <main className="flex-1 p-6">
           <div className="mx-auto max-w-6xl space-y-6">{children}</div>
         </main>
-        <footer className="border-t border-border px-6 py-3 text-center text-xs text-fg-muted">
-          {t.common.demoBanner}
-        </footer>
+        {isDemo && (
+          <footer className="border-t border-border px-6 py-3 text-center text-xs text-fg-muted">
+            {t.common.demoBanner}
+          </footer>
+        )}
       </div>
     </div>
   );

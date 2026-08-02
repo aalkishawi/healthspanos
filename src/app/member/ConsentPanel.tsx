@@ -2,6 +2,7 @@
 // Consent control. Withdrawal is immediate and self-service — a consent you
 // cannot revoke without emailing support is not meaningful consent.
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/Field";
 import { Badge } from "@/components/ui/Badge";
@@ -14,6 +15,7 @@ export function ConsentPanel({
   currentVersion: string;
   updatedAt: string | null;
 }) {
+  const router = useRouter();
   const [consent, setConsent] = useState(initialConsent);
   const [version, setVersion] = useState(initialVersion);
   const [when, setWhen] = useState(updatedAt);
@@ -38,6 +40,11 @@ export function ConsentPanel({
     setVersion(data.version);
     setWhen(data.at);
     setMsg(data.message);
+    // The consent badge next to "Your inputs" is server-rendered from the same
+    // profile row. Without this the panel says GRANTED while the badge still
+    // says PENDING until the next reload — two truths on one screen about the
+    // member's own privacy setting, which is exactly where doubt is expensive.
+    router.refresh();
   }
 
   return (

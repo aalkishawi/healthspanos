@@ -22,11 +22,25 @@ export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
 
-/** Absolute base URL for links in emails. */
+/**
+ * Absolute base URL for links in emails.
+ *
+ * APP_BASE_URL is checked FIRST and is not a NEXT_PUBLIC_ variable on purpose.
+ * Next inlines every `process.env.NEXT_PUBLIC_*` reference at BUILD time, even
+ * in server code — so NEXT_PUBLIC_APP_URL is frozen to whatever was set when
+ * the bundle was compiled and cannot be corrected at runtime. A build promoted
+ * between environments would keep emailing links to the old host, silently.
+ * APP_BASE_URL is read from the live process, so it can.
+ *
+ * VERCEL_URL is the per-deployment hostname and is also runtime-readable, which
+ * makes preview deployments send links to themselves rather than to production.
+ */
 export function appBaseUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
+  const runtime = process.env.APP_BASE_URL?.trim();
+  if (runtime) return runtime.replace(/\/$/, "");
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  const buildTime = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (buildTime) return buildTime.replace(/\/$/, "");
   return "http://localhost:3000";
 }
 
