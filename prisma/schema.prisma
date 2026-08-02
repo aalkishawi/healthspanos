@@ -1,0 +1,277 @@
+// Numik HealthspanOS — data model.
+// Multi-tenant by design: every tenant-scoped row carries tenantId and is queried
+// only through the tenant-scoping helpers in src/lib/tenant.ts.
+//
+// Postgres everywhere (Neon in production, local Postgres or a Neon branch for
+// dev) so dev and prod share one engine and one migration history. Schema
+// changes go through `prisma migrate dev`; `prisma/migrations/` is committed and
+// `prisma migrate deploy` applies it in CI/production. Never `db push` against a
+// deployed database — it drifts from the migration history.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Neon pools connections via PgBouncer; migrations need a direct (non-pooled)
+  // connection. Set DIRECT_URL to the unpooled Neon string. Falls back to
+  // DATABASE_URL when unset, so a plain local Postgres needs no extra config.
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+enum TenantType {
+  PLATFORM // Numik itself (holds platform admins + global reviewers)
+  ENTERPRISE
+  INSURER
+  HEALTHCARE
+  GOVERNMENT
+  CLINIC
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  type      TenantType   @default(ENTERPRISE)
+  status    TenantStatus @default(TRIAL)
+  // White-label branding overrides (JSON string): accent, logo, name.
+  branding  String?
+  // Marks a synthetic/demo tenant vs. a real-data-ready tenant.
+  isDemo    Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users            User[]
+  memberProfiles   MemberProfile[]
+  aggregateMetrics AggregateMetric[]
+  auditLogs        AuditLog[]
+
+  @@index([type])
+  @@index([status])
+}
+
+// Portal role model — one enum drives RBAC + navigation shells (section 6).
+enum Role {
+  PUBLIC // unauthenticated / marketing visitor (never persisted, used in RBAC map)
+  MEMBER // Member portal — owns a Healthspan Passport
+  ENTERPRISE_ADMIN // Enterprise portal — aggregate analytics only
+  REVIEWER // Scientific & clinical review portal
+  PLATFORM_ADMIN // Numik platform administration portal
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  role         Role       @default(MEMBER)
+  locale       String     @default("en")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberProfile MemberProfile?
+  reviews       ReviewApproval[]
+  auditLogs     AuditLog[]
+
+  @@index([tenantId])
+  @@index([role])
+}
+
+// ---------------------------------------------------------------------------
+// Member portal — Healthspan Passport (real-data-ready; PHI-adjacent)
+// ---------------------------------------------------------------------------
+
+enum ConsentStatus {
+  GRANTED
+  PENDING
+  WITHDRAWN
+}
+
+model MemberProfile {
+  id            String        @id @default(cuid())
+  userId        String        @unique
+  tenantId      String
+  dateOfBirth   DateTime?
+  sex           String?
+  // Consent gate: enterprises NEVER see identifiable PHI unless a legal clinical
+  // workflow requires it. Aggregate analytics ignore rows without GRANTED consent.
+  consent       ConsentStatus @default(PENDING)
+  // Free-form intake payload (questionnaires, lifestyle history) as JSON string.
+  intake        String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  scores      HealthspanScore[]
+  actionPlans ActionPlan[]
+
+  @@index([tenantId])
+  @@index([consent])
+}
+
+// Explainable, non-diagnostic healthspan-domain scores.
+model HealthspanScore {
+  id          String   @id @default(cuid())
+  profileId   String
+  domain      String // e.g. metabolic, cardiovascular, cognitive, sleep, activity
+  score       Int // 0-100
+  band        String // low | moderate | optimal
+  explanation String // human-readable rationale (explainability requirement)
+  computedAt  DateTime @default(now())
+
+  profile MemberProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([domain])
+}
+
+enum PlanStatus {
+  DRAFT
+  PENDING_SAFETY_REVIEW
+  APPROVED
+  ACTIVE
+  ARCHIVED
+}
+
+// Safe lifestyle action plans (non-diagnostic; medical/high-risk items gated).
+model ActionPlan {
+  id             String     @id @default(cuid())
+  profileId      String
+  title          String
+  summary        String
+  status         PlanStatus @default(DRAFT)
+  // True when the plan touches medical/high-risk content requiring human approval.
+  requiresReview Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  profile MemberProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Research intelligence & Scientific/Clinical review portal
+// ---------------------------------------------------------------------------
+
+enum EvidenceGrade {
+  A // systematic review / RCT
+  B // cohort / well-designed observational
+  C // case series / mechanistic
+  D // expert opinion / preliminary
+  UNGRADED
+}
+
+enum EvidenceStatus {
+  INGESTED
+  IN_REVIEW
+  APPROVED
+  FLAGGED // conflicting / corrected / retracted
+  REJECTED
+}
+
+// Global (platform-tenant-owned) research items surfaced to reviewers.
+model EvidenceItem {
+  id        String         @id @default(cuid())
+  title     String
+  source    String // journal / regulator / outlet
+  url       String?
+  summary   String
+  grade     EvidenceGrade  @default(UNGRADED)
+  status    EvidenceStatus @default(INGESTED)
+  // Retraction/conflict detection flags (JSON string of signals).
+  signals   String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  reviews ReviewApproval[]
+
+  @@index([status])
+  @@index([grade])
+}
+
+enum ReviewDecision {
+  APPROVE
+  FLAG
+  REJECT
+  REQUEST_CHANGES
+}
+
+// Human-in-the-loop approval record for medical / high-risk content.
+model ReviewApproval {
+  id             String         @id @default(cuid())
+  evidenceItemId String
+  reviewerId     String
+  decision       ReviewDecision
+  notes          String?
+  createdAt      DateTime       @default(now())
+
+  evidenceItem EvidenceItem @relation(fields: [evidenceItemId], references: [id], onDelete: Cascade)
+  reviewer     User         @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@index([evidenceItemId])
+  @@index([reviewerId])
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise portal — privacy-protected aggregate analytics ONLY
+// ---------------------------------------------------------------------------
+
+model AggregateMetric {
+  id         String   @id @default(cuid())
+  tenantId   String
+  metric     String // e.g. avg_healthspan_score, participation_rate
+  value      Float
+  cohortSize Int // suppressed at the API layer when below k-anonymity threshold
+  period     String // e.g. 2026-Q3
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, period])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting audit trail
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  action    String
+  entity    String
+  meta      String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
