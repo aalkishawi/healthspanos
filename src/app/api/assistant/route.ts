@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/session";
 import { askAssistant } from "@/lib/ai/gateway";
 import { checkRateLimit, clientKey, rateLimitHeaders, tooManyRequests } from "@/lib/ratelimit";
 import { log } from "@/lib/logger";
+import { assistantQuotaRemaining } from "@/lib/billing/entitlements";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,21 @@ export async function POST(req: Request) {
   if (!rl.success) {
     log.warn("assistant.rate_limited", { userId: user.id, tenantId: user.tenantId });
     return tooManyRequests(rl);
+  }
+
+  // Plan gate, enforced here rather than only hidden in the UI. Checked before
+  // the question is even parsed so a quota-exhausted tenant costs nothing.
+  const quota = await assistantQuotaRemaining(user.tenantId);
+  if (!quota.unlimited && quota.remaining <= 0) {
+    return NextResponse.json(
+      {
+        error: `You have used all ${quota.limit} assistant questions included this month. Upgrade for unlimited questions.`,
+        code: "QUOTA_EXCEEDED",
+        used: quota.used,
+        limit: quota.limit,
+      },
+      { status: 402 },
+    );
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));

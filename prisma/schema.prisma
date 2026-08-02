@@ -63,6 +63,7 @@ model Tenant {
 
   users            User[]
   invitations      Invitation[]
+  subscription     Subscription?
   memberProfiles   MemberProfile[]
   aggregateMetrics AggregateMetric[]
   auditLogs        AuditLog[]
@@ -459,4 +460,68 @@ model AssistantQuery {
 
   @@index([tenantId, createdAt])
   @@index([outcome])
+}
+
+// ---------------------------------------------------------------------------
+// Billing (Phase 5)
+// ---------------------------------------------------------------------------
+
+enum BillingPlan {
+  FREE // default for every tenant; no card, limited entitlements
+  MEMBER_PRO // B2C individual subscription
+  ENTERPRISE_SEATS // B2B, billed per seat
+}
+
+enum SubscriptionStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+// One subscription per tenant. Tenant, not user, because that is already the
+// billing boundary: an INDIVIDUAL tenant is one person's subscription, an
+// ENTERPRISE tenant is the employer's contract (docs/TENANCY.md).
+//
+// Stripe is the source of truth for money; this table is a local PROJECTION of
+// it kept current by webhooks. Entitlement checks read here rather than calling
+// Stripe, so a Stripe outage degrades billing administration, not the product.
+model Subscription {
+  id                   String             @id @default(cuid())
+  tenantId             String             @unique
+  plan                 BillingPlan        @default(FREE)
+  status               SubscriptionStatus @default(NONE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  // Seats sold for ENTERPRISE_SEATS. Enforced when inviting members.
+  seats                Int                @default(0)
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([plan])
+}
+
+// Every webhook Stripe sends, recorded before it is acted on.
+//
+// `eventId` is unique because Stripe retries and explicitly does not guarantee
+// exactly-once delivery. Without this, a retried `invoice.paid` could extend a
+// subscription twice — a correctness bug that shows up as customers getting
+// free months.
+model StripeEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
 }

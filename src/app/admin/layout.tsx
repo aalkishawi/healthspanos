@@ -5,6 +5,7 @@ const NAV = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/tenants", label: "Tenants" },
   { href: "/admin/users", label: "Users & Roles" },
+  { href: "/admin/billing", label: "Billing" },
   { href: "/admin/models", label: "AI Model Gateway" },
   { href: "/admin/audit", label: "Audit Log" },
 ];

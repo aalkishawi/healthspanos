@@ -5,6 +5,7 @@ import { sendInvitationEmail } from "@/lib/email";
 import { getSessionUser } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { log } from "@/lib/logger";
+import { seatsAvailable } from "@/lib/billing/entitlements";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,14 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   if (user.role !== "ENTERPRISE_ADMIN" && user.role !== "PLATFORM_ADMIN") {
     return NextResponse.json({ error: "Only an enterprise admin can invite members." }, { status: 403 });
+  }
+
+  // Seat entitlement, server-side. Outstanding invitations count against the
+  // allowance, so a tenant cannot invite past it and discover the overage only
+  // as people accept.
+  const seats = await seatsAvailable(user.tenantId);
+  if (!seats.allowed) {
+    return NextResponse.json({ error: seats.reason, code: "NO_SEATS", used: seats.used, seats: seats.seats }, { status: 402 });
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
