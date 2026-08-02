@@ -6,7 +6,7 @@ is forgotten — each item names the phase it belongs to or why it was deferred.
 Fixed items move to the bottom rather than disappearing, so the record of what
 was wrong survives.
 
-Last updated: 2026-08-02 (during Phase 2).
+Last updated: 2026-08-02 (end of Phase 7).
 
 ---
 
@@ -118,7 +118,48 @@ affect CI or Vercel.
 
 ---
 
+### 8. Encryption key has no rotation path — MEDIUM (Phase 7, deferred)
+**Where:** `src/lib/security/encryption.ts`
+
+`FIELD_ENCRYPTION_KEY` can be set, but not changed. Rotating it means decrypting
+every `MemberProfile.intake` with the old key and re-encrypting with the new one,
+and there is no script for that. If the key is suspected compromised today, the
+only options are manual SQL or accepting the exposure.
+
+**Why deferred:** the envelope already carries a `v1` version tag, so a rotation
+script can be added without a data migration. Not needed before the first key
+exists in production, but needed before an incident.
+
+**Fix:** a `scripts/rotate-encryption-key.ts` reading `OLD_KEY`/`NEW_KEY`,
+batching over profiles in a transaction.
+
+---
+
+### 9. Encryption covers `intake` only — LOW (accepted trade-off, revisit at scale)
+**Where:** `prisma/schema.prisma`
+
+Scores, bands and explanations are stored in plaintext. This is deliberate —
+they have to be aggregated for employer analytics, and encrypted columns cannot
+be. But an explanation string is health-derived and can be quite specific.
+
+**Mitigation in place:** k-anonymity on every aggregate read, tenant scoping, and
+audit logging of bulk access. Documented in `docs/SECURITY_AND_DR.md`.
+
+---
+
 ## Fixed
+
+### ✅ Account deletion destroyed its own audit trail (Phase 7, fixed 2026-08-02)
+`deleteUserData()` anonymised the audit rows, then deleted the personal tenant —
+which cascaded `AuditLog.tenantId` and took the retained trail to zero rows. The
+function carefully preserved the evidence and then destroyed it one statement
+later, so a completed deletion left nothing to prove it had happened.
+
+Found only by running export and deletion end to end against a real database;
+every unit test passed before and after. Personal tenants are now tombstoned
+(renamed, `SUSPENDED`) rather than deleted, and an explicit
+`gdpr.account_deleted` row is written. Guarded by five structural assertions in
+`tests/security.access-review.test.ts`.
 
 ### ✅ Demo banner shown to real users (Phase 1, fixed 2026-08-02)
 `PortalShell` rendered "Demo environment — synthetic data only" unconditionally,

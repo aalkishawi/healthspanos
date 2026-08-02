@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/db";
 import { log } from "@/lib/logger";
 import { IntakeSchema, type Intake } from "@/lib/intake";
+import { decryptJson } from "@/lib/security/encryption";
 import { DOMAINS, overallIndex, scoreAll, type Domain, type DomainScore } from "./rules";
 import { derivePlans, initialStatus } from "./plans";
 
@@ -37,7 +38,8 @@ export async function recomputeScores(profileId: string): Promise<ScoringResult 
   });
   if (!profile) return null;
 
-  const parsed = IntakeSchema.safeParse(profile.intake);
+  // Decrypt before validating — an encrypted envelope is not an Intake.
+  const parsed = IntakeSchema.safeParse(decryptJson(profile.intake));
   if (!parsed.success) {
     // Not an error: onboarding simply isn't finished. Scoring a partial intake
     // would mean scoring form defaults and presenting them as the member's.

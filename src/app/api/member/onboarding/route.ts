@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { IntakeSchema } from "@/lib/intake";
+import { decryptJson } from "@/lib/security/encryption";
 import { log } from "@/lib/logger";
 import { recomputeScores } from "@/lib/scoring";
+import { encryptJson } from "@/lib/security/encryption";
+import { auditHealthAccess } from "@/lib/security/audit";
 
 export const runtime = "nodejs";
 
@@ -21,7 +24,7 @@ export async function GET() {
   if (!profile) return NextResponse.json({ error: "No member profile." }, { status: 404 });
 
   return NextResponse.json({
-    intake: profile.intake ?? null,
+    intake: decryptJson(profile.intake) ?? null,
     completedAt: profile.onboardingCompletedAt,
     consent: profile.consent,
     consentVersion: profile.consentVersion,
@@ -54,7 +57,9 @@ export async function POST(req: Request) {
     prisma.memberProfile.update({
       where: { id: profile.id },
       data: {
-        intake: parsed.data,
+        // Encrypted at rest when FIELD_ENCRYPTION_KEY is set; stored as-is
+        // otherwise, so enabling encryption is a config change not a migration.
+        intake: encryptJson(parsed.data) as object,
         onboardingCompletedAt: new Date(),
         // Year-only birth data lives in `intake`; dateOfBirth stays null so we
         // don't store a more identifying value than the product needs.

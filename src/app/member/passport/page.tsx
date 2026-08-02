@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CONSENT_VERSION, summarizeIntake } from "@/lib/intake";
 import { latestScores } from "@/lib/scoring";
+import { decryptJson } from "@/lib/security/encryption";
+import { auditHealthAccess } from "@/lib/security/audit";
 import { ScoreCard } from "@/components/ScoreCard";
 import { ConsentPanel } from "../ConsentPanel";
 
@@ -25,13 +27,21 @@ export default async function PassportPage() {
   });
   const profileId = profile?.id;
 
-  const rows = summarizeIntake(profile?.intake);
+  const rows = summarizeIntake(decryptJson(profile?.intake));
   const onboarded = Boolean(profile?.onboardingCompletedAt) && rows.length > 0;
 
   // Scores are only fetched once onboarding is complete — there is nothing real
   // to compute from a partial intake, and a placeholder score would be
   // indistinguishable from a computed one.
   const scores = onboarded && profileId ? await latestScores(profileId) : [];
+  // Every read of a health record is audited, not just every write.
+  if (profileId) {
+    await auditHealthAccess({
+      tenantId: user.tenantId, userId: user.id,
+      resource: "member_profile", reason: "self",
+    });
+  }
+
   const overall = scores.length
     ? Math.round(scores.reduce((sum, s) => sum + s.score, 0) / scores.length)
     : 0;

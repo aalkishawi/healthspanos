@@ -17,6 +17,7 @@ import { log } from "@/lib/logger";
 import { K_ANONYMITY_MIN } from "@/lib/tenant";
 import { CONSENT_VERSION } from "@/lib/intake";
 import { DOMAINS, bandFor, type Domain } from "@/lib/scoring/rules";
+import { auditHealthAccess } from "@/lib/security/audit";
 
 /** Current period label, e.g. "2026-Q3". */
 export function currentPeriod(now = new Date()): string {
@@ -128,6 +129,12 @@ export async function computeTenantMetrics(
       })),
     }),
   ]);
+
+  // Bulk read across many members — exactly the access an audit wants to see.
+  await auditHealthAccess({
+    tenantId, userId: null, resource: "healthspan_scores",
+    reason: "aggregation", count: profiles.length,
+  });
 
   const result: AggregationResult = {
     tenantId,
