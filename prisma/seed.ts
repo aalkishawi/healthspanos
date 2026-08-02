@@ -1,16 +1,61 @@
 /**
- * Seeds synthetic demo tenants + demo users for every portal role.
- * Real-data-ready schema, synthetic data only (per launch clarification: hybrid).
+ * LOCAL DEVELOPMENT ONLY. Seeds synthetic demo tenants and one demo user per
+ * portal role so the app is explorable without signing anyone up.
+ *
+ * This data must NEVER reach production. Production starts empty and is filled
+ * by real signups (CLAUDE.md rule 2). Every tenant created here is marked
+ * `isDemo: true` so analytics can exclude it even if it somehow escapes.
  *
  * All demo passwords: Demo123!  (see RUN.md)
  */
 import { PrismaClient, Role, TenantType, TenantStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { CONSENT_VERSION } from "../src/lib/intake";
 
 const prisma = new PrismaClient();
 const PASSWORD = "Demo123!";
 
+/**
+ * Refuse to seed anything that isn't obviously a local database.
+ *
+ * Two independent signals, because either alone is easy to get wrong: a
+ * production NODE_ENV, and a DATABASE_URL host that isn't localhost. The
+ * override exists for CI, which runs a real throwaway Postgres in a container.
+ */
+function assertLocalDatabase(): void {
+  if (process.env.ALLOW_SEED === "true") return;
+
+  const url = process.env.DATABASE_URL ?? "";
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+  const localHost = ["localhost", "127.0.0.1", "::1", "postgres", "db"].includes(host);
+
+  if (process.env.NODE_ENV === "production" || !localHost) {
+    console.error(
+      [
+        "",
+        "  REFUSING TO SEED.",
+        "",
+        `  NODE_ENV = ${process.env.NODE_ENV ?? "(unset)"}`,
+        `  database host = ${host || "(unparseable)"}`,
+        "",
+        "  prisma/seed.ts writes synthetic demo data and is for local development",
+        "  only. Production must start empty and be populated by real signups.",
+        "  If this really is a throwaway database (e.g. CI), set ALLOW_SEED=true.",
+        "",
+      ].join(String.fromCharCode(10)),
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertLocalDatabase();
   const hash = await bcrypt.hash(PASSWORD, 10);
 
   // --- Platform tenant (Numik itself) ---
@@ -52,8 +97,9 @@ async function main() {
   for (const u of users) {
     await prisma.user.upsert({
       where: { email: u.email },
-      update: { role: u.role, tenantId: u.tenantId, passwordHash: hash },
-      create: { ...u, passwordHash: hash, locale: "en" },
+      update: { role: u.role, tenantId: u.tenantId, passwordHash: hash, emailVerifiedAt: new Date(), status: "ACTIVE" },
+      create: { ...u, passwordHash: hash,
+      emailVerifiedAt: new Date(), locale: "en" },
     });
   }
 
@@ -65,9 +111,33 @@ async function main() {
     create: {
       userId: member.id,
       tenantId: acme.id,
-      sex: "unspecified",
+      sex: "prefer not to say",
       consent: "GRANTED",
-      intake: { sleepHrs: 6.8, steps: 7400, restingHr: 62, goals: ["improve sleep", "metabolic health"] },
+      consentVersion: CONSENT_VERSION,
+      consentUpdatedAt: new Date(),
+      onboardingCompletedAt: new Date(),
+      // Shape must satisfy IntakeSchema (src/lib/intake.ts) — the demo member is
+      // meant to look like someone who finished onboarding, not a broken record.
+      intake: {
+        goals: ["improve sleep", "metabolic health"],
+        sleep: { averageHours: 6.8, quality: 3, wakesDuringNight: true },
+        activity: { level: "moderate", sessionsPerWeek: 2, averageDailySteps: 7400 },
+        lifestyle: { diet: "mixed", smoking: "never", alcohol: "occasional", stress: "high" },
+        about: { birthYear: 1986, sex: "prefer not to say" },
+      },
+    },
+  });
+
+  // Consent ledger entry so the demo member's history matches their state.
+  await prisma.consentRecord.upsert({
+    where: { id: `seed-consent-${profile.id}` },
+    update: {},
+    create: {
+      id: `seed-consent-${profile.id}`,
+      profileId: profile.id,
+      tenantId: acme.id,
+      version: CONSENT_VERSION,
+      action: "GRANTED",
     },
   });
 

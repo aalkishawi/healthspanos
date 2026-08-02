@@ -16,6 +16,11 @@ export const runtime = "nodejs";
 
 const Body = z.object({ email: z.string().email(), password: z.string().min(1) });
 
+// A real bcrypt hash of a value nobody knows. Compared against when the account
+// does not exist, so a missing user costs the same ~200ms as a wrong password
+// and cannot be distinguished by timing.
+const DUMMY_HASH = "$2a$12$C6UzMDM.H6dfI/f/IKcEe.7Pi/tPYqBjWQhpSHwbCVsxHRCVoUFVy";
+
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -24,10 +29,36 @@ export async function POST(req: Request) {
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  // Constant-ish response: same error whether user missing or password wrong.
-  const ok = user && user.status === "ACTIVE" && (await bcrypt.compare(password, user.passwordHash));
-  if (!user || !ok) {
+  // Check the password FIRST, independently of status. Same error whether the
+  // user is missing or the password is wrong, so login is not an enumeration
+  // oracle. bcrypt.compare runs against a dummy hash for a missing user so the
+  // response time doesn't distinguish the two.
+  const passwordOk = user
+    ? await bcrypt.compare(password, user.passwordHash)
+    : await bcrypt.compare(password, DUMMY_HASH).then(() => false);
+  if (!user || !passwordOk) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+  }
+
+  // Only AFTER the password is proven do we disclose account state. At this
+  // point the caller already knows the credentials, so naming the reason leaks
+  // nothing and saves them guessing why a correct password "fails".
+  if (user.status === "PENDING_VERIFICATION") {
+    log.info("auth.login.unverified", { userId: user.id });
+    return NextResponse.json(
+      {
+        error: "Confirm your email address before signing in. Check your inbox for the link.",
+        code: "EMAIL_NOT_VERIFIED",
+      },
+      { status: 403 },
+    );
+  }
+  if (user.status !== "ACTIVE") {
+    log.warn("auth.login.inactive", { userId: user.id, status: user.status });
+    return NextResponse.json(
+      { error: "This account is not active. Contact your administrator." },
+      { status: 403 },
+    );
   }
 
   const token = await createSessionToken({

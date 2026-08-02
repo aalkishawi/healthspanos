@@ -32,6 +32,7 @@ datasource db {
 
 enum TenantType {
   PLATFORM // Numik itself (holds platform admins + global reviewers)
+  INDIVIDUAL // B2C self-signup: one personal tenant per member (see docs/TENANCY.md)
   ENTERPRISE
   INSURER
   HEALTHCARE
@@ -59,6 +60,7 @@ model Tenant {
   updatedAt DateTime     @updatedAt
 
   users            User[]
+  invitations      Invitation[]
   memberProfiles   MemberProfile[]
   aggregateMetrics AggregateMetric[]
   auditLogs        AuditLog[]
@@ -78,7 +80,8 @@ enum Role {
 
 enum UserStatus {
   ACTIVE
-  INVITED
+  PENDING_VERIFICATION // self-signup, email not yet confirmed — cannot sign in
+  INVITED // B2B invite issued, password not yet set
   DISABLED
 }
 
@@ -91,6 +94,9 @@ model User {
   role         Role       @default(MEMBER)
   locale       String     @default("en")
   status       UserStatus @default(ACTIVE)
+  // When the address was confirmed. `status` gates access; this records when and
+  // survives later status changes, so it is an audit fact, not a duplicate flag.
+  emailVerifiedAt DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -98,6 +104,7 @@ model User {
   memberProfile MemberProfile?
   reviews       ReviewApproval[]
   auditLogs     AuditLog[]
+  authTokens    AuthToken[]
 
   @@index([tenantId])
   @@index([role])
@@ -125,14 +132,23 @@ model MemberProfile {
   // Free-form intake payload (questionnaires, lifestyle history).
   // PHI: never log the contents (see src/lib/logger.ts redaction list).
   intake        Json?
+  // Set when the member finishes the intake flow. Null = onboarding incomplete,
+  // which is what the passport uses to decide between real data and a prompt to
+  // finish — never a fabricated placeholder score.
+  onboardingCompletedAt DateTime?
+  // Denormalised current consent, mirroring the latest ConsentRecord so cohort
+  // queries stay a single indexed predicate instead of a per-row history scan.
+  consentVersion String?
+  consentUpdatedAt DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  scores      HealthspanScore[]
-  actionPlans ActionPlan[]
+  scores         HealthspanScore[]
+  actionPlans    ActionPlan[]
+  consentRecords ConsentRecord[]
 
   @@index([tenantId])
   @@index([consent])
@@ -280,4 +296,84 @@ model AuditLog {
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Account lifecycle — verification, password reset, B2B invitations
+// ---------------------------------------------------------------------------
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+// Single-use, expiring, HASHED credentials emailed to a user.
+//
+// Only the SHA-256 of the token is stored, never the token itself — the same
+// reasoning as passwordHash. A database leak must not hand the attacker live
+// password-reset links.
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  type      AuthTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+// A pending B2B membership. Exists BEFORE any User row does, so it carries the
+// destination tenant and role rather than pointing at a user.
+model Invitation {
+  id          String    @id @default(cuid())
+  tenantId    String
+  email       String
+  role        Role      @default(MEMBER)
+  tokenHash   String    @unique
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // One live invitation per address per tenant; re-inviting replaces it.
+  @@unique([tenantId, email])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Consent — append-only history behind the current state on MemberProfile
+// ---------------------------------------------------------------------------
+
+enum ConsentAction {
+  GRANTED
+  WITHDRAWN
+}
+
+// Immutable consent ledger. Never updated or deleted: withdrawing appends a
+// WITHDRAWN row rather than mutating the GRANTED one, so the record of what a
+// member agreed to, and when, survives the withdrawal. That history is the
+// evidence a regulator or DPA audit asks for.
+model ConsentRecord {
+  id        String        @id @default(cuid())
+  profileId String
+  tenantId  String
+  // Which consent text was agreed to, e.g. "2026-08-01". Re-consent is required
+  // when this changes, so an old agreement cannot silently cover new processing.
+  version   String
+  action    ConsentAction
+  createdAt DateTime      @default(now())
+
+  profile MemberProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, createdAt])
+  @@index([tenantId])
 }

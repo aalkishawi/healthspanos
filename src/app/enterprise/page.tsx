@@ -4,6 +4,7 @@ import { tenantScope, isCohortReportable, K_ANONYMITY_MIN } from "@/lib/tenant";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
+import { InvitePanel } from "./InvitePanel";
 
 function fmt(metric: string, value: number): string {
   if (metric.includes("rate") || metric.includes("share")) return `${Math.round(value * 100)}%`;
@@ -17,6 +18,23 @@ export default async function EnterpriseOverview() {
     where: { ...tenantScope(user), period: "2026-Q3" },
     orderBy: { metric: "asc" },
   });
+
+  // Invitations for THIS tenant only. Serialised to strings because a Server
+  // Component cannot hand Date objects to a Client Component.
+  const invites = (
+    await prisma.invitation.findMany({
+      where: { tenantId: user.tenantId },
+      select: { email: true, createdAt: true, expiresAt: true, acceptedAt: true, revokedAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    })
+  ).map((i) => ({
+    email: i.email,
+    createdAt: i.createdAt.toISOString(),
+    expiresAt: i.expiresAt.toISOString(),
+    acceptedAt: i.acceptedAt?.toISOString() ?? null,
+    revokedAt: i.revokedAt?.toISOString() ?? null,
+  }));
 
   return (
     <>
@@ -55,6 +73,7 @@ export default async function EnterpriseOverview() {
           <p>✗ Never: names, individual scores, lab values, wearable data, or any identifiable PHI.</p>
         </CardBody>
       </Card>
+      <InvitePanel initialInvites={invites} />
     </>
   );
 }

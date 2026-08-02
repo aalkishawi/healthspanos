@@ -19,6 +19,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <div className="rounded-lg border border-border bg-surface-2 p-6 shadow-card">
           <h1 className="text-xl font-semibold">{t.auth.signInTitle}</h1>
           <LoginForm next={next} dict={{ email: t.auth.email, password: t.auth.password, submit: t.auth.submit }} />
+        <div className="mt-5 space-y-1 text-center text-sm text-fg-muted">
+          <p><a href="/forgot-password" className="text-accent">Forgot your password?</a></p>
+          <p>New here? <a href="/signup" className="text-accent">Create an account</a></p>
+        </div>
         </div>
 
         {/* Demo credentials — synthetic tenants only */}
