@@ -14,12 +14,14 @@
 // deployed database — it drifts from the migration history.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url        = env("DATABASE_URL")
+  extensions = [vector]
   // Neon pools connections via PgBouncer; migrations need a direct (non-pooled)
   // connection. Set DIRECT_URL to the unpooled Neon string. Falls back to
   // DATABASE_URL when unset, so a plain local Postgres needs no extra config.
@@ -219,10 +221,25 @@ enum EvidenceStatus {
 // Global (platform-tenant-owned) research items surfaced to reviewers.
 model EvidenceItem {
   id        String         @id @default(cuid())
+  // Stable id from the upstream source, e.g. a PubMed PMID. Unique so repeated
+  // ingestion updates a record rather than duplicating the literature.
+  externalId String?       @unique
+  sourceType EvidenceSource @default(PUBMED)
   title     String
   source    String // journal / regulator / outlet
   url       String?
   summary   String
+  // Full abstract. Kept verbatim because citation verification checks that a
+  // quoted span actually occurs in it — a paraphrase would defeat that.
+  abstract  String?
+  authors   String?
+  journal   String?
+  publishedAt DateTime?
+  // 1536-dim embedding of title+abstract (OpenAI text-embedding-3-small).
+  // Unsupported: Prisma cannot type pgvector, so similarity search is raw SQL
+  // in src/lib/evidence/retrieval.ts. The column is still migrated and indexed.
+  embedding Unsupported("vector(1536)")?
+  embeddedAt DateTime?
   grade     EvidenceGrade  @default(UNGRADED)
   status    EvidenceStatus @default(INGESTED)
   // Retraction/conflict detection flags.
@@ -234,6 +251,13 @@ model EvidenceItem {
 
   @@index([status])
   @@index([grade])
+  @@index([publishedAt])
+}
+
+enum EvidenceSource {
+  PUBMED
+  MANUAL
+  REGULATOR
 }
 
 enum ReviewDecision {
@@ -376,4 +400,63 @@ model ConsentRecord {
 
   @@index([profileId, createdAt])
   @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// AI usage metering and the assistant's safety trail
+// ---------------------------------------------------------------------------
+
+// One row per model call. Feeds per-tenant cost control now and billing later
+// (Phase 5), and is the evidence for "what did this tenant actually consume".
+model AiUsage {
+  id               String   @id @default(cuid())
+  tenantId         String
+  userId           String?
+  provider         String
+  model            String
+  purpose          String // answer | embedding | verification
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  // Estimated, from a static price table. Marked estimated because provider
+  // pricing changes and we do not reconcile against invoices.
+  estimatedCostUsd Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
+}
+
+enum AssistantOutcome {
+  ANSWERED // grounded answer returned with verified citations
+  NO_EVIDENCE // nothing in the corpus supported an answer; nothing invented
+  ESCALATED // individual medical question — routed to human review
+  BLOCKED // unsafe or out-of-scope; refused
+}
+
+// Every assistant interaction. Exists so a clinical or regulatory review can
+// reconstruct what a member asked, what the system said, and which papers it
+// leaned on — the audit story for an AI that touches health questions.
+//
+// PHI: `question` is a member's health query. It is tenant-scoped, never logged
+// to stdout, and never exposed to an enterprise tenant.
+model AssistantQuery {
+  id         String           @id @default(cuid())
+  tenantId   String
+  userId     String
+  question   String
+  outcome    AssistantOutcome
+  answer     String?
+  // EvidenceItem ids actually cited, after verification dropped any the model
+  // invented or could not support with a quote from the abstract.
+  citedIds   String[]         @default([])
+  // Citations the model produced that FAILED verification. Kept deliberately:
+  // a rising count here is the early warning that the model is fabricating.
+  rejectedCitations Int       @default(0)
+  model      String?
+  reviewedAt DateTime?
+  reviewedBy String?
+  createdAt  DateTime         @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([outcome])
 }

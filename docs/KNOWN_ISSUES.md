@@ -73,32 +73,26 @@ already calls for. Phase 3's evidence base is where citations attach.
 
 ---
 
-### 5. `askAssistant()` reports `demo: false` while returning a placeholder — HIGH (latent)
-**Where:** `src/lib/ai/gateway.ts:61`
+### ~~5. `askAssistant()` reports `demo: false` while returning a placeholder~~ — FIXED in Phase 3
+See the Fixed section.
 
-With **no** provider key the gateway correctly returns the demo notice with
-`demo: true` — honest, and what a user sees today.
+### 5b. Live RAG path is unverified end to end — MEDIUM (needs a key)
+**Where:** `src/lib/ai/answer.ts`, `src/lib/evidence/`
 
-With a key **configured** it returns:
-```ts
-{ answer: "Live model integration pending.", citations: [], model: model.id, demo: false }
-```
+Everything up to the model call is verified against real data: PubMed ingestion
+(10 real papers), safety gating, the honest demo path, and the audit trail. The
+generate → verify → cite leg has only been exercised by unit tests, because no
+provider key is configured on this machine, and embeddings additionally require
+`OPENAI_API_KEY`.
 
-`demo: false` is untrue. The moment a real key is set, every surface that trusts
-that flag will drop the demo badge and present a placeholder sentence as a
-genuine, citation-backed answer. On a health product that is the worst failure
-mode in the file. CLAUDE.md rule 3 names this exact function as the
-anti-pattern.
+**What is NOT yet demonstrated:** a live grounded answer with verified citations
+against the real corpus. That is the phase's headline acceptance criterion, and
+it is honestly outstanding.
 
-**Why not fixed now:** the live path is explicitly Phase 3
-(`PRODUCTION_BUILD_PLAN.md` line 84) and CLAUDE.md forbids jumping ahead.
-
-**Interim safety:** do not set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
-`GEMINI_API_KEY` in any environment real users can reach until Phase 3 lands.
-Today they are all empty, so the honest demo path is what runs.
-
-**Fix (Phase 3):** dispatch to the provider SDK, and until that works return
-`demo: true` — a placeholder must never claim to be a live answer.
+**To close it:** set `OPENAI_API_KEY` (embeddings are mandatory regardless of
+which provider answers), run `npm run evidence:ingest`, then ask a longevity
+question in the member portal. Expect the badge to read "Grounded in evidence"
+and each source to show a quote verified against its abstract.
 
 ---
 
@@ -145,6 +139,20 @@ said GRANTED. `ConsentPanel` now calls `router.refresh()`. Commit `5c4cfcc`.
 `EmailSchema` validated before normalising, so mobile autofill's trailing space
 failed as "invalid email address". Now trims and lowercases first. Caught by a
 new test.
+
+### ✅ askAssistant() claimed demo:false while returning a placeholder (fixed in Phase 3)
+The old gateway returned `{ answer: "Live model integration pending.", demo: false }`
+whenever a key was configured, so setting a key would have made the UI drop the
+demo badge and present a stub as a real citation-backed health answer. The
+gateway now runs a real pipeline, and every non-live branch reports
+`demo: true`. Verified live: with no key, a general question returns
+`demo: true` and says exactly why.
+
+### ✅ PubMed numeric HTML entities left raw (fixed in Phase 3)
+Titles ingested as `APOE &#x3b5;4` instead of `APOE ε4`. Named entities were
+decoded, numeric ones were not — and medical literature is full of them (ε, μ,
+≥). Raw entities poison the title, the embedding, and any verification quote
+drawn from the abstract. Caught by reading real ingested records, not by a test.
 
 ### ✅ Misleading breadcrumb (Phase 1, fixed 2026-08-02)
 The member portal's accent label read "Healthspan Passport" on every page,

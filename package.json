@@ -2,7 +2,7 @@
   "name": "numik-healthspanos",
   "version": "0.1.0",
   "private": true,
-  "description": "Numik HealthspanOS — multi-tenant enterprise longevity intelligence SaaS foundation",
+  "description": "Numik HealthspanOS \u2014 multi-tenant enterprise longevity intelligence SaaS foundation",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "prisma generate && next build",
@@ -18,7 +18,9 @@
     "test:e2e": "playwright test",
     "build:production": "prisma generate && prisma migrate deploy && next build",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "evidence:ingest": "tsx scripts/ingest-evidence.ts",
+    "evidence:stats": "tsx scripts/ingest-evidence.ts --stats"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",

@@ -68,33 +68,67 @@ export function AssistantForm() {
 
       {answer && (
         <div className="space-y-3 rounded border border-border bg-surface p-4">
-          <div className="flex items-center gap-2">
-            <Badge tone={answer.demo ? "info" : "success"}>{answer.demo ? "Demo mode" : "Live"}</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={answer.demo ? "info" : answer.outcome === "ANSWERED" ? "success" : "warning"}>
+              {answer.demo
+                ? "Demo mode"
+                : answer.outcome === "ANSWERED"
+                  ? "Grounded in evidence"
+                  : answer.outcome === "ESCALATED"
+                    ? "Routed to clinical review"
+                    : answer.outcome === "NO_EVIDENCE"
+                      ? "No supporting evidence"
+                      : "Not answered"}
+            </Badge>
             <span className="text-xs text-fg-muted">Model: {answer.model}</span>
+            {answer.rejectedCitations > 0 && (
+              // Surfaced rather than hidden: a citation the model could not
+              // support was discarded, and the reader deserves to know the
+              // answer is thinner than the model first claimed.
+              <span className="text-xs text-fg-muted">
+                · {answer.rejectedCitations} unverified citation
+                {answer.rejectedCitations === 1 ? "" : "s"} discarded
+              </span>
+            )}
           </div>
           <p className="whitespace-pre-wrap text-sm text-fg">{answer.answer}</p>
           {answer.citations.length > 0 && (
             <div>
-              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Citations</h4>
-              <ul className="space-y-1">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                Sources ({answer.citations.length}) — each quote verified against the paper
+              </h4>
+              <ul className="space-y-3">
                 {answer.citations.map((c, i) => (
-                  <li key={i} className="text-sm">
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-accent underline-offset-2 hover:underline"
-                    >
-                      {c.title}
-                    </a>
+                  <li key={i} className="rounded border border-border bg-surface-2 p-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="neutral">Grade {c.grade}</Badge>
+                      {c.journal && <span className="text-xs text-fg-muted">{c.journal}</span>}
+                    </div>
+                    {c.url ? (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block text-accent underline-offset-2 hover:underline"
+                      >
+                        {c.title}
+                      </a>
+                    ) : (
+                      <span className="mt-1 block">{c.title}</span>
+                    )}
+                    {/* The verified span. Shown because "trust us, it says so"
+                        is not verification the reader can check themselves. */}
+                    <blockquote className="mt-2 border-l-2 border-accent/40 pl-3 text-xs italic text-fg-muted">
+                      &ldquo;{c.quote}&rdquo;
+                    </blockquote>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          <p className="text-xs text-fg-muted">
-            Non-diagnostic. Numik provides graded, citation-backed information, not medical advice.
-          </p>
+          {answer.notice && (
+            <p className="text-xs text-fg-muted">{answer.notice}</p>
+          )}
         </div>
       )}
     </div>

@@ -26,7 +26,10 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "A question (3-1000 chars) is required." }, { status: 400 });
 
   try {
-    const answer = await askAssistant(parsed.data.question);
+    const answer = await askAssistant(parsed.data.question, {
+      tenantId: user.tenantId,
+      userId: user.id,
+    });
     // The question itself is never logged — it is member health context.
     log.info("assistant.answered", { userId: user.id, tenantId: user.tenantId });
     return NextResponse.json(answer, { headers: rateLimitHeaders(rl) });

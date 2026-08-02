@@ -1,8 +1,9 @@
-// Configurable multi-model AI gateway (scaffold).
-// The foundation registers the latest stable model families across providers and
-// exposes a single structured-output entry point. Live calls activate when the
-// matching provider key is present; otherwise the gateway returns a demo response
-// so the product is fully navigable without keys.
+// Configurable multi-model AI gateway.
+//
+// The model registry and the public `askAssistant` shape live here; the actual
+// retrieval-augmented pipeline is in ./answer.ts. Keeping this entry point
+// stable meant no call site changed when the live path landed.
+import { answerQuestion, type AssistantResult } from "./answer";
 
 export type Provider = "OpenAI" | "Anthropic" | "Google";
 
@@ -27,7 +28,7 @@ function spec(id: string, provider: Provider, role: string, envKey: ModelSpec["e
 }
 
 export const AI_MODELS: ModelSpec[] = [
-  spec("gpt-5.4", "OpenAI", "Research assistant / synthesis", "OPENAI_API_KEY"),
+  spec("gpt-4o", "OpenAI", "Research assistant / synthesis", "OPENAI_API_KEY"),
   spec("claude-opus-4", "Anthropic", "Evidence review / safety reasoning", "ANTHROPIC_API_KEY"),
   spec("claude-sonnet-4", "Anthropic", "Coaching / plan generation", "ANTHROPIC_API_KEY"),
   spec("gemini-2.5-pro", "Google", "Multilingual / retrieval", "GEMINI_API_KEY"),
@@ -35,28 +36,50 @@ export const AI_MODELS: ModelSpec[] = [
 
 export interface AssistantAnswer {
   answer: string;
-  citations: { title: string; url: string }[];
+  citations: { title: string; url: string | null; journal: string | null; grade: string; quote: string }[];
   model: string;
   demo: boolean;
+  outcome: string;
+  /** Citations the model produced that failed verification and were dropped. */
+  rejectedCitations: number;
+  notice?: string;
 }
 
 /**
- * Structured, citation-backed answer. Foundation returns a demo answer unless a
- * provider is configured; the call site treats the shape as stable regardless.
+ * Grounded, citation-backed, non-diagnostic answer.
+ *
+ * `demo` is now honest in every branch. The previous implementation returned
+ * `demo: false` alongside the placeholder "Live model integration pending." —
+ * so the moment a provider key was set, the UI would have dropped the demo
+ * badge and presented a stub as a real, citation-backed health answer. Nothing
+ * here reports a live answer it did not produce.
+ *
+ * The pipeline itself (safety → budget → retrieve → generate → verify) lives in
+ * ./answer.ts; this stays the stable entry point.
  */
-export async function askAssistant(question: string): Promise<AssistantAnswer> {
-  const model = AI_MODELS.find((m) => m.configured);
-  if (!model) {
-    return {
-      answer:
-        "Demo mode: connect an AI provider key to enable live, retrieval-augmented answers. " +
-        `Your question was: "${question}". Numik would return a graded, citation-backed, non-diagnostic response.`,
-      citations: [],
-      model: "demo",
-      demo: true,
-    };
-  }
-  // Live provider integration is intentionally deferred to the AI-services milestone.
-  // Wiring point: dispatch to the provider SDK by model.provider here.
-  return { answer: "Live model integration pending.", citations: [], model: model.id, demo: false };
+export async function askAssistant(
+  question: string,
+  ctx: { tenantId: string; userId: string },
+): Promise<AssistantAnswer> {
+  const result: AssistantResult = await answerQuestion({
+    question,
+    tenantId: ctx.tenantId,
+    userId: ctx.userId,
+  });
+
+  return {
+    answer: result.answer,
+    citations: result.citations.map((c) => ({
+      title: c.title,
+      url: c.url,
+      journal: c.journal,
+      grade: c.grade,
+      quote: c.quote,
+    })),
+    model: result.model,
+    demo: result.demo,
+    outcome: result.outcome,
+    rejectedCitations: result.rejectedCitations,
+    notice: result.notice,
+  };
 }
