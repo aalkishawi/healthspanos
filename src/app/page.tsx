@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { getDictionary } from "@/lib/i18n";
-import { LaunchButton } from "@/components/LaunchButton";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { SiteFooter, SiteHeader } from "@/components/site/Chrome";
 
 // Public website (Portal 1). Marketing + the prominent Launch button + portal map.
 export default function PublicHome() {
@@ -18,25 +18,7 @@ export default function PublicHome() {
 
   return (
     <div className="min-h-screen bg-surface text-fg">
-      {/* Public top nav */}
-      <header className="sticky top-0 z-10 border-b border-border bg-surface/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded bg-accent text-sm font-bold text-white">N</span>
-            <span className="font-semibold">{t.brand}</span>
-          </Link>
-          <nav className="hidden items-center gap-6 text-sm text-fg-muted md:flex" aria-label="Primary">
-            <a href="#portals" className="hover:text-fg">{t.nav.portals}</a>
-            <a href="#evidence" className="hover:text-fg">{t.nav.evidence}</a>
-            <a href="#security" className="hover:text-fg">{t.nav.security}</a>
-          </nav>
-          <div className="flex items-center gap-3">
-            <ButtonLink href="/login" variant="secondary" size="sm">
-              {t.nav.signIn}
-            </ButtonLink>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="numik-accent-grad">
@@ -45,11 +27,16 @@ export default function PublicHome() {
           <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-tight md:text-5xl">{t.public.heroTitle}</h1>
           <p className="mt-5 max-w-2xl text-lg text-fg-muted">{t.public.heroBody}</p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <LaunchButton label={t.public.ctaPrimary} />
-            <ButtonLink href="/login" variant="secondary" size="lg">
-              {t.public.ctaSecondary}
+            <ButtonLink href="/signup" size="lg">
+              Create a free account
+            </ButtonLink>
+            <ButtonLink href="/contact?topic=demo" variant="secondary" size="lg">
+              Book a demo for your organisation
             </ButtonLink>
           </div>
+          <p className="mt-4 text-sm text-fg-muted">
+            Free to start · No card required · Your employer never sees identifiable data
+          </p>
         </div>
       </section>
 
@@ -95,12 +82,82 @@ export default function PublicHome() {
         </div>
       </section>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-fg-muted md:flex-row">
-          <p>© {new Date().getFullYear()} Numik HealthspanOS · Demo environment — synthetic data only.</p>
-          <p>Non-diagnostic. For wellness and workforce healthspan programs.</p>
+
+      {/* How it works — the value proposition a cold visitor needs */}
+      <section className="border-t border-border">
+        <div className="mx-auto max-w-6xl px-6 py-16">
+          <h2 className="text-2xl font-semibold">How it works</h2>
+          <div className="mt-8 grid gap-6 md:grid-cols-3">
+            {[
+              {
+                step: "01",
+                title: "Members answer five short steps",
+                body: "Goals, sleep, activity and lifestyle. No symptoms, no medications, no test results — this is not a clinical intake.",
+              },
+              {
+                step: "02",
+                title: "Numik computes explainable indices",
+                body: "Five domain scores, each showing the reasoning behind the number. Nothing is a black box, and nothing is a diagnosis.",
+              },
+              {
+                step: "03",
+                title: "Employers see patterns, never people",
+                body: "Aggregates for groups large enough that nobody can be identified, and only for members who consented.",
+              },
+            ].map((s) => (
+              <div key={s.step}>
+                <span className="text-sm font-semibold text-accent">{s.step}</span>
+                <h3 className="mt-2 font-semibold">{s.title}</h3>
+                <p className="mt-2 text-sm text-fg-muted">{s.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
-      </footer>
+      </section>
+
+      {/* Social proof — deliberately empty placeholders. Fabricating logos or
+          testimonials for a product with no customers would put invented
+          content on a public page. */}
+      <section className="border-t border-border bg-surface-2">
+        <div className="mx-auto max-w-6xl px-6 py-12">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-fg-muted">
+            Early access partners
+          </p>
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="grid h-16 place-items-center rounded border border-dashed border-border text-xs text-fg-muted"
+              >
+                Partner logo
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-center text-xs text-fg-muted">
+            We are onboarding our first partners now.{" "}
+            <a href="/contact?topic=demo" className="text-accent underline-offset-2 hover:underline">
+              Talk to us
+            </a>{" "}
+            about being one.
+          </p>
+        </div>
+      </section>
+
+      {/* Closing CTA */}
+      <section className="border-t border-border">
+        <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+          <h2 className="text-3xl font-semibold">Start with your own passport</h2>
+          <p className="mt-3 text-fg-muted">
+            Free, no card, and you can delete everything at any time.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <ButtonLink href="/signup" size="lg">Create a free account</ButtonLink>
+            <ButtonLink href="/pricing" variant="secondary" size="lg">See pricing</ButtonLink>
+          </div>
+        </div>
+      </section>
+
+      <SiteFooter />
     </div>
   );
 }

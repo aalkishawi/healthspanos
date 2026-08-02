@@ -151,6 +151,47 @@ export function sendInvitationEmail(to: string, orgName: string, inviterName: st
   );
 }
 
+/**
+ * Enquiry from the public contact form, sent to the team inbox.
+ *
+ * `replyTo` is the enquirer so a reply goes to them rather than to our own
+ * sender address — the difference between a usable inbox and an unusable one.
+ */
+export function sendContactEnquiry(input: {
+  name: string;
+  email: string;
+  organisation?: string;
+  topic: string;
+  message: string;
+}): Promise<SendResult> {
+  const to = process.env.CONTACT_INBOX || FROM.replace(/.*<|>.*/g, "");
+  const body =
+    `Topic: ${input.topic}
+` +
+    `From: ${input.name} <${input.email}>
+` +
+    (input.organisation ? `Organisation: ${input.organisation}
+` : "") +
+    `
+${input.message}
+`;
+
+  return send(
+    to,
+    `[Numik] ${input.topic} enquiry from ${input.name}`,
+    layout(
+      "New enquiry",
+      `<p><strong>Topic:</strong> ${escapeHtml(input.topic)}</p>` +
+        `<p><strong>From:</strong> ${escapeHtml(input.name)} (${escapeHtml(input.email)})</p>` +
+        (input.organisation ? `<p><strong>Organisation:</strong> ${escapeHtml(input.organisation)}</p>` : "") +
+        `<p style="white-space:pre-wrap">${escapeHtml(input.message)}</p>`,
+      { href: `mailto:${input.email}`, label: `Reply to ${input.name}` },
+    ),
+    body,
+    "contact-enquiry",
+  );
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
