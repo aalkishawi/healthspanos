@@ -1,6 +1,7 @@
 import { requirePortal } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { tenantScope, isCohortReportable, K_ANONYMITY_MIN } from "@/lib/tenant";
+import { isCohortReportable, K_ANONYMITY_MIN } from "@/lib/tenant";
+import { enterpriseSummary } from "@/lib/analytics/read";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
@@ -14,10 +15,10 @@ function fmt(metric: string, value: number): string {
 export default async function EnterpriseOverview() {
   const user = await requirePortal("enterprise");
   // Tenant-scoped read — an enterprise admin can only ever see their own tenant.
-  const metrics = await prisma.aggregateMetric.findMany({
-    where: { ...tenantScope(user), period: "2026-Q3" },
-    orderBy: { metric: "asc" },
-  });
+  // Same k-anonymised reader as the analytics table. No page reads
+  // aggregateMetric directly, so suppression cannot be forgotten on one surface.
+  const summary = await enterpriseSummary(user.tenantId, "2026-Q3");
+  const metrics = summary.metrics;
 
   // Invitations for THIS tenant only. Serialised to strings because a Server
   // Component cannot hand Date objects to a Client Component.
@@ -55,12 +56,14 @@ export default async function EnterpriseOverview() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        {metrics.map((m) => (
+        {metrics.map((m, i) => (
           <Stat
-            key={m.id}
+            key={`${m.period}-${m.metric}-${i}`}
             label={m.metric.replace(/_/g, " ")}
-            value={isCohortReportable(m.cohortSize) ? fmt(m.metric, m.value) : "—"}
-            hint={isCohortReportable(m.cohortSize) ? `cohort n=${m.cohortSize}` : "suppressed (cohort too small)"}
+            // `value` and `cohortSize` are null when suppressed — the reader
+            // strips both, so there is nothing here to accidentally render.
+            value={m.suppressed || m.value === null ? "—" : fmt(m.metric, m.value)}
+            hint={m.suppressed ? "suppressed (cohort too small)" : `cohort n=${m.cohortSize}`}
           />
         ))}
       </div>

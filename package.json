@@ -20,7 +20,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "evidence:ingest": "tsx scripts/ingest-evidence.ts",
-    "evidence:stats": "tsx scripts/ingest-evidence.ts --stats"
+    "evidence:stats": "tsx scripts/ingest-evidence.ts --stats",
+    "analytics:recompute": "tsx scripts/recompute-analytics.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",
