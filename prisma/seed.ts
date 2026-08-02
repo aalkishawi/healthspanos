@@ -23,7 +23,7 @@ async function main() {
       type: TenantType.PLATFORM,
       status: TenantStatus.ACTIVE,
       isDemo: true,
-      branding: JSON.stringify({ accent: "#7c5cff", name: "Numik HealthspanOS" }),
+      branding: { accent: "#7c5cff", name: "Numik HealthspanOS" },
     },
   });
 
@@ -37,7 +37,7 @@ async function main() {
       type: TenantType.ENTERPRISE,
       status: TenantStatus.ACTIVE,
       isDemo: true,
-      branding: JSON.stringify({ accent: "#7c5cff", name: "Acme Health" }),
+      branding: { accent: "#7c5cff", name: "Acme Health" },
     },
   });
 
@@ -67,7 +67,7 @@ async function main() {
       tenantId: acme.id,
       sex: "unspecified",
       consent: "GRANTED",
-      intake: JSON.stringify({ sleepHrs: 6.8, steps: 7400, restingHr: 62, goals: ["improve sleep", "metabolic health"] }),
+      intake: { sleepHrs: 6.8, steps: 7400, restingHr: 62, goals: ["improve sleep", "metabolic health"] },
     },
   });
 
@@ -106,7 +106,7 @@ async function main() {
   const evidence = [
     { title: "Time-restricted eating and metabolic markers: an RCT", source: "JAMA Internal Medicine", grade: "A" as const, status: "IN_REVIEW" as const, summary: "12-week RCT reporting modest improvements in insulin sensitivity.", url: "https://example.org/tre-rct" },
     { title: "Omega-3 supplementation and cognitive decline", source: "Lancet Neurology", grade: "B" as const, status: "INGESTED" as const, summary: "Cohort analysis suggesting association; causality unestablished.", url: "https://example.org/omega3" },
-    { title: "Retraction notice: microbiome longevity claims", source: "Nature (Retraction)", grade: "UNGRADED" as const, status: "FLAGGED" as const, summary: "Original findings retracted; flagged for conflict/retraction handling.", url: "https://example.org/retraction", signals: JSON.stringify({ retracted: true }) },
+    { title: "Retraction notice: microbiome longevity claims", source: "Nature (Retraction)", grade: "UNGRADED" as const, status: "FLAGGED" as const, summary: "Original findings retracted; flagged for conflict/retraction handling.", url: "https://example.org/retraction", signals: { retracted: true } },
   ];
   for (const e of evidence) {
     await prisma.evidenceItem.create({ data: e });

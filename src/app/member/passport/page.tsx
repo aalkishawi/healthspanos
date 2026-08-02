@@ -6,7 +6,13 @@ import { Badge } from "@/components/ui/Badge";
 export default async function PassportPage() {
   const user = await requirePortal("member");
   const profile = await prisma.memberProfile.findUnique({ where: { userId: user.id } });
-  const intake = profile?.intake ? (JSON.parse(profile.intake) as Record<string, unknown>) : {};
+  // `intake` is a native jsonb column, so Prisma returns an already-parsed
+  // value — no JSON.parse, and no malformed-string failure mode at read time.
+  // Still guarded: the column is nullable and only an object is renderable.
+  const intake =
+    profile?.intake && typeof profile.intake === "object" && !Array.isArray(profile.intake)
+      ? (profile.intake as Record<string, unknown>)
+      : {};
 
   return (
     <>

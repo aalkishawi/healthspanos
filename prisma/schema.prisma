@@ -2,6 +2,11 @@
 // Multi-tenant by design: every tenant-scoped row carries tenantId and is queried
 // only through the tenant-scoping helpers in src/lib/tenant.ts.
 //
+// Semi-structured columns use native Postgres Json (jsonb), not stringified
+// text. Text was a SQLite-era workaround: it pushed parsing to every read
+// site, made malformed payloads a runtime surprise rather than a write-time
+// error, and left the data unqueryable and unindexable.
+//
 // Postgres everywhere (Neon in production, local Postgres or a Neon branch for
 // dev) so dev and prod share one engine and one migration history. Schema
 // changes go through `prisma migrate dev`; `prisma/migrations/` is committed and
@@ -46,8 +51,8 @@ model Tenant {
   name      String
   type      TenantType   @default(ENTERPRISE)
   status    TenantStatus @default(TRIAL)
-  // White-label branding overrides (JSON string): accent, logo, name.
-  branding  String?
+  // White-label branding overrides: accent, logo, name.
+  branding  Json?
   // Marks a synthetic/demo tenant vs. a real-data-ready tenant.
   isDemo    Boolean      @default(false)
   createdAt DateTime     @default(now())
@@ -117,8 +122,9 @@ model MemberProfile {
   // Consent gate: enterprises NEVER see identifiable PHI unless a legal clinical
   // workflow requires it. Aggregate analytics ignore rows without GRANTED consent.
   consent       ConsentStatus @default(PENDING)
-  // Free-form intake payload (questionnaires, lifestyle history) as JSON string.
-  intake        String?
+  // Free-form intake payload (questionnaires, lifestyle history).
+  // PHI: never log the contents (see src/lib/logger.ts redaction list).
+  intake        Json?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -203,8 +209,8 @@ model EvidenceItem {
   summary   String
   grade     EvidenceGrade  @default(UNGRADED)
   status    EvidenceStatus @default(INGESTED)
-  // Retraction/conflict detection flags (JSON string of signals).
-  signals   String?
+  // Retraction/conflict detection flags.
+  signals   Json?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
@@ -266,7 +272,7 @@ model AuditLog {
   userId    String?
   action    String
   entity    String
-  meta      String?
+  meta      Json?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
