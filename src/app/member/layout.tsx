@@ -11,7 +11,7 @@ const NAV = [
 export default async function MemberLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePortal("member");
   return (
-    <PortalShell user={user} portalName="Member portal" accentLabel="Healthspan Passport" nav={NAV}>
+    <PortalShell user={user} portalName="Member portal" accentLabel="Member" nav={NAV}>
       {children}
     </PortalShell>
   );

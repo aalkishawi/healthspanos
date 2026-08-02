@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { IntakeSchema } from "@/lib/intake";
 import { log } from "@/lib/logger";
+import { recomputeScores } from "@/lib/scoring";
 
 export const runtime = "nodejs";
 
@@ -70,7 +71,22 @@ export async function POST(req: Request) {
     }),
   ]);
 
+  // Scores recompute on every intake change — that is the trigger. Done after
+  // the intake write commits so a scoring failure can never lose the member's
+  // answers; they would simply see "scores pending" and a retry recomputes.
+  let scoring = null;
+  try {
+    scoring = await recomputeScores(profile.id);
+  } catch (err) {
+    log.error("scoring.failed_after_onboarding", err, { userId: user.id });
+  }
+
   // Answers themselves are never logged — they are PHI.
   log.info("onboarding.completed", { userId: user.id, tenantId: user.tenantId });
-  return NextResponse.json({ ok: true, redirect: "/member/passport" });
+  return NextResponse.json({
+    ok: true,
+    redirect: "/member/passport",
+    scored: scoring !== null,
+    plansHeldForReview: scoring?.plansHeldForReview ?? 0,
+  });
 }

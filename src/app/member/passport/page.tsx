@@ -5,6 +5,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CONSENT_VERSION, summarizeIntake } from "@/lib/intake";
+import { latestScores } from "@/lib/scoring";
+import { ScoreCard } from "@/components/ScoreCard";
 import { ConsentPanel } from "../ConsentPanel";
 
 export const metadata = { title: "Healthspan Passport · Numik HealthspanOS" };
@@ -16,13 +18,23 @@ export default async function PassportPage() {
   const profile = await prisma.memberProfile.findFirst({
     where: { userId: user.id, tenantId: user.tenantId },
     select: {
+      id: true,
       intake: true, consent: true, consentVersion: true, consentUpdatedAt: true,
       onboardingCompletedAt: true,
     },
   });
+  const profileId = profile?.id;
 
   const rows = summarizeIntake(profile?.intake);
   const onboarded = Boolean(profile?.onboardingCompletedAt) && rows.length > 0;
+
+  // Scores are only fetched once onboarding is complete — there is nothing real
+  // to compute from a partial intake, and a placeholder score would be
+  // indistinguishable from a computed one.
+  const scores = onboarded && profileId ? await latestScores(profileId) : [];
+  const overall = scores.length
+    ? Math.round(scores.reduce((sum, s) => sum + s.score, 0) / scores.length)
+    : 0;
 
   return (
     <>
@@ -79,10 +91,38 @@ export default async function PassportPage() {
                 <Button variant="secondary" size="sm">Update my answers</Button>
               </Link>
               <p className="text-xs text-fg-muted">
-                Domain scores are computed from these inputs in a later release; nothing is shown
-                here until it is real.
+                Changing your answers recomputes your indices below and keeps the previous values as
+                history.
               </p>
             </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {scores.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Your healthspan indices"
+            subtitle="Computed from your own answers. Every number shows the reasoning behind it."
+            action={<Badge tone="info">Overall {overall}</Badge>}
+          />
+          <CardBody>
+            <div className="grid gap-4 md:grid-cols-2">
+              {scores.map((s) => (
+                <ScoreCard
+                  key={s.domain}
+                  domain={s.domain}
+                  score={s.score}
+                  band={s.band}
+                  explanation={s.explanation}
+                  computedAt={s.computedAt}
+                />
+              ))}
+            </div>
+            <p className="mt-4 text-xs text-fg-muted">
+              These are lifestyle indicators derived from what you reported. They are non-diagnostic,
+              are not a medical assessment, and do not estimate disease risk.
+            </p>
           </CardBody>
         </Card>
       )}

@@ -4,6 +4,7 @@ import { PortalShell } from "@/components/PortalShell";
 const NAV = [
   { href: "/reviewer", label: "Review Queue" },
   { href: "/reviewer/flagged", label: "Flagged & Retracted" },
+  { href: "/reviewer/plans", label: "Plans Awaiting Review" },
 ];
 
 export default async function ReviewerLayout({ children }: { children: React.ReactNode }) {
