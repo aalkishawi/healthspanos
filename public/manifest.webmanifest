@@ -1,0 +1,12 @@
+{
+  "name": "Numik HealthspanOS",
+  "short_name": "HealthspanOS",
+  "description": "The longevity intelligence operating system for the enterprise.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0e1a",
+  "theme_color": "#0c0e1a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
